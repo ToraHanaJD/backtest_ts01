@@ -1,0 +1,7 @@
+run_clock_test.bat
+run_clock_test.sh
+run_execution_client_test.bat
+run_execution_client_test.sh
+tests/concurrency_test_basic
+tests/concurrent_test
+tests/order_book_test
