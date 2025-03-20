@@ -23,7 +23,7 @@
 using namespace backtest;
 using namespace std::chrono;
 
-// 生成随机行情数据用于测试
+// 随机行情数据 for test
 std::vector<DataEvent> generateRandomQuotes(const std::string& symbol, 
                                            UnixNanos start_time, 
                                            UnixNanos end_time, 
@@ -104,13 +104,13 @@ std::vector<DataEvent> generateRandomTrades(const std::string& symbol,
 
 // 测试不同类型锁的性能
 void testLockPerformance() {
-    std::cout << "\n==== 锁性能测试 ====\n";
+    std::cout << "\n==== Lock Performance Test ====\n";
     
     const int numThreads = std::thread::hardware_concurrency();
     const int numOperations = 10000000; // 1千万次操作
     
-    std::cout << "测试环境: " << numThreads << " 线程, 每个测试执行 " 
-              << numOperations << " 次操作\n\n";
+    std::cout << "Test Environment: " << numThreads << " threads, each test executes " 
+              << numOperations << " operations\n\n";
     
     std::atomic<int> counter(0);
     
@@ -243,13 +243,13 @@ void testLockPerformance() {
 
 // 测试不同类型队列的性能
 void testQueuePerformance() {
-    std::cout << "\n==== 队列性能测试 ====\n";
+    std::cout << "\n==== Queue Performance Test ====\n";
     
     const int numThreads = std::thread::hardware_concurrency();
     const int numItems = 1000000; // 每个线程处理100万个项目
     
-    std::cout << "测试环境: " << numThreads << " 线程, 每个线程处理 " 
-              << numItems << " 个项目\n\n";
+    std::cout << "Test Environment: " << numThreads << " threads, each thread processes " 
+              << numItems << " items\n\n";
     
     // std::queue + mutex
     {
@@ -314,7 +314,7 @@ void testQueuePerformance() {
         bool checksum_ok = (sum_in.load() == sum_out.load());
         std::cout << "std::queue + mutex: " << duration << " ms, " 
                   << (numItems * numThreads / 2 * 1000.0 / duration) << " ops/sec, "
-                  << "校验: " << (checksum_ok ? "正确" : "错误") << "\n";
+                  << "Result: " << (checksum_ok ? "correct" : "incorrect") << "\n";
     }
     
     // ThreadSafeQueue
@@ -366,7 +366,7 @@ void testQueuePerformance() {
         bool checksum_ok = (sum_in.load() == sum_out.load());
         std::cout << "ThreadSafeQueue: " << duration << " ms, " 
                   << (numItems * numThreads / 2 * 1000.0 / duration) << " ops/sec, "
-                  << "校验: " << (checksum_ok ? "正确" : "错误") << "\n";
+                  << "Result: " << (checksum_ok ? "correct" : "incorrect") << "\n";
     }
 #if defined(__linux__)
     {
@@ -421,7 +421,7 @@ void testQueuePerformance() {
         bool checksum_ok = (sum_in.load() == sum_out.load());
         std::cout << "LockFreeQueue: " << duration << " ms, " 
                   << (numItems * numThreads / 2 * 1000.0 / duration) << " ops/sec, "
-                  << "校验: " << (checksum_ok ? "正确" : "错误") << "\n";
+                  << "Result: " << (checksum_ok ? "correct" : "incorrect") << "\n";
     }
 #endif
     // HighPerformanceQueue
@@ -473,12 +473,12 @@ void testQueuePerformance() {
         bool checksum_ok = (sum_in.load() == sum_out.load());
         std::cout << "HighPerformanceQueue: " << duration << " ms, " 
                   << (numItems * numThreads / 2 * 1000.0 / duration) << " ops/sec, "
-                  << "校验: " << (checksum_ok ? "正确" : "错误") << "\n";
+                  << "Result: " << (checksum_ok ? "correct" : "incorrect") << "\n";
     }
 }
 
 void testParallelEngine() {
-    std::cout << "\n==== 并行回测引擎性能测试 ====\n";
+    std::cout << "\n==== Engine Performance Test ====\n";
     
     const int numQuotes = 1000000;  // 100万个报价
     const int numTrades = 500000;   // 50万个交易
@@ -532,7 +532,7 @@ void testParallelEngine() {
         // 计算吞吐量
         double total_events = result.processed_quotes + result.processed_trades;
         double throughput = total_events * 1000.0 / result.execution_time_ms;
-        std::cout << "吞吐量: " << std::fixed << std::setprecision(2) << throughput << " 事件/秒\n";
+        std::cout << "Throughput: " << std::fixed << std::setprecision(2) << throughput << " events/second\n";
     }
     
     {
@@ -579,7 +579,7 @@ void testParallelEngine() {
         // 计算吞吐量
         double total_events = result.processed_quotes + result.processed_trades;
         double throughput = total_events * 1000.0 / result.execution_time_ms;
-        std::cout << "吞吐量: " << std::fixed << std::setprecision(2) << throughput << " 事件/秒\n";
+        std::cout << "Throughput: " << std::fixed << std::setprecision(2) << throughput << " events/second\n";
     }
 }
 
