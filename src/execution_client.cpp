@@ -83,7 +83,7 @@ void defaultAccountStateCallback(const std::vector<AccountBalance>& balances, Un
     }
     
     std::cout << std::string(60, '-') << std::endl;
-    std::cout << "总资产估值: " << std::fixed << std::setprecision(2) << total_value << " " << base_currency << std::endl;
+    std::cout << "Total Asset Value: " << std::fixed << std::setprecision(2) << total_value << " " << base_currency << std::endl;
     std::cout << "======================================\n" << std::endl;
     
     // todo : 这里可以添加以下功能：
@@ -154,7 +154,7 @@ void BacktestExecutionClient::generateAccountState(
             current_balances = balances;
         }
         
-        // 通知账户状态已更新（始终调用回调）
+        // 通知账户状态已更新
         if (account_state_callback_) {
             account_state_callback_(current_balances, ts_event);
         }

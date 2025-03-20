@@ -380,13 +380,11 @@ void testQueuePerformance() {
         std::vector<std::thread> producers;
         std::vector<std::thread> consumers;
         
-        // 启动生产者
         for (int i = 0; i < numThreads / 2; ++i) {
             producers.emplace_back([&queue, &sum_in, i, numItems]() {
                 for (int j = 0; j < numItems; ++j) {
                     int val = i * numItems + j;
                     while (!queue.Push(val)) {
-                        // 队列满，休眠一下再重试
                         std::this_thread::yield();
                     }
                     sum_in.fetch_add(val, std::memory_order_relaxed);
@@ -479,15 +477,12 @@ void testQueuePerformance() {
     }
 }
 
-// 测试并行回测引擎性能
 void testParallelEngine() {
     std::cout << "\n==== 并行回测引擎性能测试 ====\n";
     
-    // 测试参数
     const int numQuotes = 1000000;  // 100万个报价
     const int numTrades = 500000;   // 50万个交易
     
-    // 创建回测配置
     BacktestConfig config;
     config.start_time_ns = 1742428800000000000; // 2025-03-19 00:00:00
     config.end_time_ns = 1742515200000000000;   // 2025-03-20 00:00:00
@@ -495,16 +490,11 @@ void testParallelEngine() {
     config.thread_pool_size = 0;                // 使用默认线程数
     config.batch_size = 10000;                  // 批处理大小
     
-    // 初始账户余额
     Money balance("USDT", 1000000.0);
     config.initial_balances.push_back(balance);
-    
-    // 设置交易所
     config.venue = static_cast<Venue>(std::hash<std::string>{}("BINANCE"));
-    
-    // 使用并行回测引擎
     {
-        std::cout << "并行回测...\n";
+        std::cout << "Parallel Backtest...\n";
         
         ParallelBacktestEngine engine(config);
         
@@ -524,7 +514,6 @@ void testParallelEngine() {
             return generateRandomTrades("ETH/USDT", start, end, numTrades);
         });
         
-        // 设置策略
         engine.setStrategyFactory([](std::shared_ptr<ExecutionClient> exec, std::shared_ptr<Clock> clock) {
         });
         
@@ -532,10 +521,10 @@ void testParallelEngine() {
         auto result = engine.run();
         auto end = high_resolution_clock::now();
         
-        std::cout << "并行回测完成:\n";
-        std::cout << "处理的报价: " << result.processed_quotes << "\n";
-        std::cout << "处理的交易: " << result.processed_trades << "\n";
-        std::cout << "引擎报告的执行时间: " << result.execution_time_ms << " ms\n";
+        std::cout << "Parallel Backtest Completed:\n";
+        std::cout << "Processed Quotes: " << result.processed_quotes << "\n";
+        std::cout << "Processed Trades: " << result.processed_trades << "\n";
+        std::cout << "Engine Reported Execution Time: " << result.execution_time_ms << " ms\n";
         
         auto actual_duration = duration_cast<milliseconds>(end - start).count();
         std::cout << "实际执行时间: " << actual_duration << " ms\n";
@@ -546,9 +535,8 @@ void testParallelEngine() {
         std::cout << "吞吐量: " << std::fixed << std::setprecision(2) << throughput << " 事件/秒\n";
     }
     
-    // 使用顺序回测引擎进行比较
     {
-        std::cout << "\n顺序回测...\n";
+        std::cout << "\nSequential Backtest...\n";
         
         // 禁用并行模式
         config.enable_parallel = false;
@@ -580,10 +568,10 @@ void testParallelEngine() {
         auto result = engine.run();
         auto end = high_resolution_clock::now();
         
-        std::cout << "顺序回测完成:\n";
-        std::cout << "处理的报价: " << result.processed_quotes << "\n";
-        std::cout << "处理的交易: " << result.processed_trades << "\n";
-        std::cout << "引擎报告的执行时间: " << result.execution_time_ms << " ms\n";
+        std::cout << "Sequential Backtest Completed:\n";
+        std::cout << "Processed Quotes: " << result.processed_quotes << "\n";
+        std::cout << "Processed Trades: " << result.processed_trades << "\n";
+        std::cout << "Engine Reported Execution Time: " << result.execution_time_ms << " ms\n";
         
         auto actual_duration = duration_cast<milliseconds>(end - start).count();
         std::cout << "实际执行时间: " << actual_duration << " ms\n";
@@ -596,9 +584,7 @@ void testParallelEngine() {
 }
 
 int main() {
-    std::cout << "==================================" << std::endl;
-    std::cout << "  高性能并发原语和并行引擎性能测试" << std::endl;
-    std::cout << "==================================" << std::endl;
+    std::cout << "---------------TESTS FOR CONCURRENT-----------------" << std::endl;
     
     testLockPerformance();
     

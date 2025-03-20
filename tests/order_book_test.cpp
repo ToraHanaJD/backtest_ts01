@@ -15,7 +15,6 @@
 
 using namespace backtest;
 
-// 辅助函数，用于验证条件，如果条件为假则输出错误信息
 #define TEST_ASSERT(condition, message) \
     do { \
         if (!(condition)) { \
@@ -24,7 +23,6 @@ using namespace backtest;
         } \
     } while (0)
 
-// 测试订单簿的初始状态
 bool testOrderBookInitialState() {
     std::cout << "测试订单簿初始状态..." << std::endl;
     
@@ -37,7 +35,6 @@ bool testOrderBookInitialState() {
     TEST_ASSERT(book.asks().empty(), "新创建的订单簿不应有卖单");
     TEST_ASSERT(book.type() == BookType::L2, "订单簿类型应为L2");
     
-    // 当订单簿为空时，价格应该为默认值
     TEST_ASSERT(book.bestBidPrice() == 0.0, "空订单簿的最优买价应为0");
     TEST_ASSERT(book.bestAskPrice() == std::numeric_limits<double>::max(), "空订单簿的最优卖价应为最大值");
     TEST_ASSERT(book.midPrice() == 0.0, "空订单簿的中间价应为0");
@@ -47,7 +44,6 @@ bool testOrderBookInitialState() {
     return true;
 }
 
-// 测试添加订单
 bool testAddOrders() {
     std::cout << "测试添加订单..." << std::endl;
     
@@ -108,7 +104,6 @@ bool testAddOrders() {
     return true;
 }
 
-// 测试更新订单
 bool testUpdateOrders() {
     std::cout << "测试更新订单..." << std::endl;
     
@@ -179,7 +174,7 @@ bool testDeleteOrders() {
 
 // 测试批量更新
 bool testBatchUpdates() {
-    std::cout << "测试批量更新..." << std::endl;
+    std::cout << "Test Batch Updates..." << std::endl;
     
     InstrumentId instrument_id = 12345;
     OrderBook book(instrument_id, BookType::L2);
@@ -204,31 +199,21 @@ bool testBatchUpdates() {
     // 应用批量更新
     book.applyDeltas(batchUpdate);
     
-    // 验证订单簿状态
     TEST_ASSERT(book.bids().size() == 3, "应该有三个买单价格级别");
     TEST_ASSERT(book.asks().size() == 3, "应该有三个卖单价格级别");
     TEST_ASSERT(book.bestBidPrice() == 100.0, "最优买价应为100.0");
     TEST_ASSERT(book.bestAskPrice() == 101.0, "最优卖价应为101.0");
     
-    // 创建第二批更新，包括更新和删除操作
     std::vector<OrderBookDelta> deltas2;
     
-    // 更新一个买单
     deltas2.emplace_back(instrument_id, OrderBookAction::UPDATE, true, 100.0, 5.0, now, now);
-    // 删除一个买单
     deltas2.emplace_back(instrument_id, OrderBookAction::DELETE, true, 99.0, 0.0, now, now);
-    // 更新一个卖单
     deltas2.emplace_back(instrument_id, OrderBookAction::UPDATE, false, 101.0, 3.0, now, now);
-    // 删除一个卖单
     deltas2.emplace_back(instrument_id, OrderBookAction::DELETE, false, 102.0, 0.0, now, now);
     
-    // 创建批量更新对象
     OrderBookDeltas batchUpdate2(instrument_id, deltas2, now, now);
-    
-    // 应用批量更新
     book.applyDeltas(batchUpdate2);
     
-    // 验证更新后的订单簿状态
     TEST_ASSERT(book.bids().size() == 2, "应该有两个买单价格级别");
     TEST_ASSERT(book.asks().size() == 2, "应该有两个卖单价格级别");
     TEST_ASSERT(book.bidSize(100.0) == 5.0, "价格为100.0的买单数量应为5.0");
@@ -240,7 +225,6 @@ bool testBatchUpdates() {
     return true;
 }
 
-// 测试清空订单簿
 bool testClearOrderBook() {
     std::cout << "测试清空订单簿..." << std::endl;
     
@@ -248,19 +232,15 @@ bool testClearOrderBook() {
     OrderBook book(instrument_id, BookType::L2);
     UnixNanos now = 1000000000;
     
-    // 添加一些订单
     OrderBookDelta delta1(instrument_id, OrderBookAction::ADD, true, 100.0, 1.5, now, now);
     OrderBookDelta delta2(instrument_id, OrderBookAction::ADD, false, 101.0, 2.0, now, now);
     book.applyDelta(delta1);
     book.applyDelta(delta2);
     
-    // 验证订单簿非空
     TEST_ASSERT(!book.isEmpty(), "添加订单后订单簿不应为空");
     
-    // 清空订单簿
     book.clear();
     
-    // 验证订单簿已清空
     TEST_ASSERT(book.isEmpty(), "清空后订单簿应为空");
     TEST_ASSERT(book.bids().empty(), "清空后不应有买单");
     TEST_ASSERT(book.asks().empty(), "清空后不应有卖单");
@@ -269,7 +249,6 @@ bool testClearOrderBook() {
     return true;
 }
 
-// 测试极端情况
 bool testEdgeCases() {
     std::cout << "测试极端情况..." << std::endl;
     
@@ -277,21 +256,16 @@ bool testEdgeCases() {
     OrderBook book(instrument_id, BookType::L2);
     UnixNanos now = 1000000000;
     
-    // 测试更新和删除不存在的价格级别
     OrderBookDelta updateNonExistent(instrument_id, OrderBookAction::UPDATE, true, 100.0, 1.0, now, now);
     book.applyDelta(updateNonExistent);
     
-    // 应该默默地创建了新价格级别
     TEST_ASSERT(book.bidSize(100.0) == 1.0, "更新不存在的价格级别应该创建新级别");
     
-    // 删除不存在的价格级别
     OrderBookDelta deleteNonExistent(instrument_id, OrderBookAction::DELETE, false, 101.0, 0.0, now, now);
     book.applyDelta(deleteNonExistent);
     
-    // 不应该有效果
     TEST_ASSERT(book.askSize(101.0) == 0.0, "删除不存在的价格级别应该没有效果");
     
-    // 测试极端价格
     double large_price = 1000000.0;
     double small_price = 0.0000001;
     
@@ -308,7 +282,6 @@ bool testEdgeCases() {
     return true;
 }
 
-// 测试只有一侧有订单的情况
 bool testOneSidedBook() {
     std::cout << "测试只有一侧有订单的情况..." << std::endl;
     
@@ -316,7 +289,6 @@ bool testOneSidedBook() {
     OrderBook book(instrument_id, BookType::L2);
     UnixNanos now = 1000000000;
     
-    // 只添加买单
     OrderBookDelta delta1(instrument_id, OrderBookAction::ADD, true, 100.0, 1.5, now, now);
     book.applyDelta(delta1);
     
@@ -326,7 +298,6 @@ bool testOneSidedBook() {
     TEST_ASSERT(book.midPrice() == 0.0, "只有买单时中间价应为0");
     TEST_ASSERT(book.spread() == 0.0, "只有买单时价差应为0");
     
-    // 清空订单簿并只添加卖单
     book.clear();
     OrderBookDelta delta2(instrument_id, OrderBookAction::ADD, false, 101.0, 2.0, now, now);
     book.applyDelta(delta2);
@@ -341,7 +312,6 @@ bool testOneSidedBook() {
     return true;
 }
 
-// 测试获取指定深度的订单簿状态
 bool testBookDepth() {
     std::cout << "测试获取指定深度的订单簿状态..." << std::endl;
     
@@ -349,7 +319,6 @@ bool testBookDepth() {
     OrderBook book(instrument_id, BookType::L2);
     UnixNanos now = 1000000000;
     
-    // 添加多个价格级别的买单
     OrderBookDelta delta1(instrument_id, OrderBookAction::ADD, true, 100.0, 1.0, now, now);
     OrderBookDelta delta2(instrument_id, OrderBookAction::ADD, true, 99.0, 2.0, now, now);
     OrderBookDelta delta3(instrument_id, OrderBookAction::ADD, true, 98.0, 3.0, now, now);
@@ -362,7 +331,6 @@ bool testBookDepth() {
     book.applyDelta(delta4);
     book.applyDelta(delta5);
     
-    // 添加多个价格级别的卖单
     OrderBookDelta delta6(instrument_id, OrderBookAction::ADD, false, 101.0, 1.5, now, now);
     OrderBookDelta delta7(instrument_id, OrderBookAction::ADD, false, 102.0, 2.5, now, now);
     OrderBookDelta delta8(instrument_id, OrderBookAction::ADD, false, 103.0, 3.5, now, now);
@@ -375,14 +343,13 @@ bool testBookDepth() {
     book.applyDelta(delta9);
     book.applyDelta(delta10);
     
-    // 测试获取所有深度
     std::vector<OrderBookLevel> allBids = book.bids();
     std::vector<OrderBookLevel> allAsks = book.asks();
     
     TEST_ASSERT(allBids.size() == 5, "应该有5个买单价格级别");
     TEST_ASSERT(allAsks.size() == 5, "应该有5个卖单价格级别");
     
-    // 测试获取指定深度(3)
+    // 指定深度(3)
     std::vector<OrderBookLevel> top3Bids = book.bids(3);
     std::vector<OrderBookLevel> top3Asks = book.asks(3);
     
@@ -417,11 +384,10 @@ bool testBookDepth() {
 }
 
 int main() {
-    std::cout << "开始OrderBook组件测试..." << std::endl;
+    std::cout << "---------OrderBook Test---------" << std::endl;
     
     bool all_tests_passed = true;
     
-    // 运行所有测试
     all_tests_passed &= testOrderBookInitialState();
     all_tests_passed &= testAddOrders();
     all_tests_passed &= testOneSidedBook();
@@ -433,10 +399,10 @@ int main() {
     all_tests_passed &= testEdgeCases();
     
     if (all_tests_passed) {
-        std::cout << "\n所有测试通过！OrderBook组件工作正常。" << std::endl;
+        std::cout << "\nALL TESTS PASSED!" << std::endl;
         return 0;
     } else {
-        std::cout << "\n有测试失败！请检查上面的错误信息。" << std::endl;
+        std::cout << "\nTESTS FAILED!" << std::endl;
         return 1;
     }
 } 
