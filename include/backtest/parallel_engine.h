@@ -19,6 +19,7 @@
 #include "backtest/exchange.h"
 #include "backtest/clock.h"
 #include "backtest/execution_client.h"
+#include "backtest/strategy.h"
 
 namespace backtest {
 
@@ -115,7 +116,7 @@ public:
      * 
      * @param strategy_factory 策略工厂函数，接收执行客户端和时钟，返回策略实例
      */
-    void setStrategyFactory(std::function<void(std::shared_ptr<ExecutionClient>, std::shared_ptr<Clock>)> strategy_factory);
+    void setStrategyFactory(std::function<std::shared_ptr<Strategy>(std::shared_ptr<ExecutionClient>, std::shared_ptr<Clock>)> strategy_factory);
     
     /**
      * @brief 运行回测
@@ -149,8 +150,11 @@ private:
     
     std::shared_ptr<TestClock> clock_;
     
+    // 策略实例
+    std::shared_ptr<Strategy> strategy_;
+    
     // 策略工厂函数
-    std::function<void(std::shared_ptr<ExecutionClient>, std::shared_ptr<Clock>)> strategy_factory_;
+    std::function<std::shared_ptr<Strategy>(std::shared_ptr<ExecutionClient>, std::shared_ptr<Clock>)> strategy_factory_;
     
     // 数据源列表
     std::vector<DataSourceFunction> data_sources_;

@@ -10,7 +10,6 @@
 
 using namespace backtest;
 
-// 创建一个辅助函数来为示例生成ID
 inline InstrumentId createInstrumentId(uint64_t id) {
     return id;
 }
@@ -20,16 +19,14 @@ inline Venue createVenue(uint64_t id) {
 }
 
 int main() {
-    // 创建时钟
     auto clock = std::make_shared<TestClock>();
-    
-    // 设置初始资金
+
     std::vector<Money> initial_balances;
     initial_balances.emplace_back("USDT", 10000.0);
     
-    // 创建交易所
+    // Exchange
     auto exchange = std::make_shared<SimulatedExchange>(
-        createVenue(1),  // 使用数字ID代替字符串
+        createVenue(1),
         OmsType::NETTING,
         AccountType::CASH,
         initial_balances,
@@ -56,11 +53,13 @@ int main() {
         false   // frozen_account
     );
     
-    // 注册执行客户端到交易所
+    // 启动客户端
+    client->start();
+    
+    // 注册
     exchange->registerClient(client);
     
-    // 添加交易对
-    InstrumentId btcusdt = createInstrumentId(1001);  // 使用数字ID
+    InstrumentId btcusdt = createInstrumentId(1001);
     exchange->addInstrument(btcusdt);
     
     // 初始化账户
@@ -81,7 +80,7 @@ int main() {
     exchange->processQuoteTick(quote);
     exchange->process(clock->timestampNs());
     
-    // 提交买入订单
+    // Buy
     auto buy_order = std::make_shared<Order>(
         generateUUID(),
         client->venue(),
@@ -97,11 +96,11 @@ int main() {
     std::cout << "Submitting BUY order: " << buy_order->toString() << std::endl;
     client->submitOrder(buy_order);
     
-    // 处理时间推进
+    // 推进时间
     clock->setTime(2000000);
     exchange->process(clock->timestampNs());
     
-    // 创建一个匹配的市场卖单来触发成交
+    // Sell to trigger
     TradeTick trade(
         btcusdt,
         40000.0,  // price
@@ -118,7 +117,7 @@ int main() {
     exchange->processTradeTick(trade);
     exchange->process(clock->timestampNs());
     
-    // 查看账户余额
+    // 查看余额
     std::cout << "\nAccount balance after BUY order executed:" << std::endl;
     const Account* account = client->getAccount();
     if (account) {
@@ -145,7 +144,7 @@ int main() {
     exchange->processQuoteTick(updated_quote);
     exchange->process(clock->timestampNs());
     
-    // 提交卖出订单
+    // Sell
     auto sell_order = std::make_shared<Order>(
         generateUUID(),
         client->venue(),
@@ -161,11 +160,11 @@ int main() {
     std::cout << "\nSubmitting SELL order: " << sell_order->toString() << std::endl;
     client->submitOrder(sell_order);
     
-    // 处理时间推进
+    // 推进时间
     clock->setTime(4000000);
     exchange->process(clock->timestampNs());
     
-    // 创建一个匹配的市场买单来触发成交
+    // Buy order to trigger
     TradeTick updated_trade(
         btcusdt,
         42000.0,  // price
@@ -182,7 +181,7 @@ int main() {
     exchange->processTradeTick(updated_trade);
     exchange->process(clock->timestampNs());
     
-    // 查看账户余额
+    // 查看余额
     std::cout << "\nAccount balance after SELL order executed:" << std::endl;
     if (account) {
         for (const auto& balance : account->balances()) {
@@ -192,7 +191,7 @@ int main() {
         }
     }
     
-    // 计算收益
+    // calculate profit
     double profit = 0.1 * (42000.0 - 40000.0);
     std::cout << "\nProfit from BTCUSDT trading: " << std::fixed << std::setprecision(2) 
               << profit << " USDT" << std::endl;

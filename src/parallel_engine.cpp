@@ -76,7 +76,7 @@ void ParallelBacktestEngine::addDataSource(
 }
 
 void ParallelBacktestEngine::setStrategyFactory(
-    std::function<void(std::shared_ptr<ExecutionClient>, std::shared_ptr<Clock>)> strategy_factory) {
+    std::function<std::shared_ptr<Strategy>(std::shared_ptr<ExecutionClient>, std::shared_ptr<Clock>)> strategy_factory) {
     strategy_factory_ = std::move(strategy_factory);
 }
 
@@ -108,24 +108,37 @@ std::vector<DataEvent> ParallelBacktestEngine::loadAndSortData() {
 void ParallelBacktestEngine::processDataEvent(const DataEvent& event, BacktestResult& result) {
     clock_->setTime(event.timestamp);
     
+    // 处理数据事件
     switch (event.type) {
         case DataEventType::QUOTE_TICK:
             exchange_->processQuoteTick(event.quote());
             result.processed_quotes++;
+            if (strategy_) {
+                strategy_->onQuote(event.quote());
+            }
             break;
             
         case DataEventType::TRADE_TICK:
             exchange_->processTradeTick(event.trade());
             result.processed_trades++;
+            if (strategy_) {
+                strategy_->onTrade(event.trade());
+            }
             break;
             
         case DataEventType::BAR:
             exchange_->processBar(event.bar());
             result.processed_bars++;
+            if (strategy_) {
+                strategy_->onBar(event.bar());
+            }
             break;
             
         case DataEventType::ORDER_BOOK_DELTA:
             exchange_->processOrderBookDelta(event.delta());
+            if (strategy_) {
+                strategy_->onOrderBookDelta(event.delta());
+            }
             break;
             
         case DataEventType::INSTRUMENT_STATUS:
@@ -135,6 +148,10 @@ void ParallelBacktestEngine::processDataEvent(const DataEvent& event, BacktestRe
     
     // 处理交易所内部逻辑
     exchange_->process(event.timestamp);
+    
+    // 更新订单统计
+    result.processed_orders = exchange_->orderCount();
+    result.filled_orders = exchange_->fillCount();
 }
 
 void ParallelBacktestEngine::processDataBatchesParallel(
@@ -166,7 +183,8 @@ void ParallelBacktestEngine::processDataBatchesParallel(
                 result.processed_quotes += batch_result.processed_quotes;
                 result.processed_trades += batch_result.processed_trades;
                 result.processed_bars += batch_result.processed_bars;
-                // todo : 其他统计信息...
+                result.processed_orders += batch_result.processed_orders;
+                result.filled_orders += batch_result.filled_orders;
                 result_mutex.unlock();
             }
         }));
@@ -191,18 +209,23 @@ BacktestResult ParallelBacktestEngine::run() {
     
     auto start_time = std::chrono::high_resolution_clock::now();
     
-    // strategy factory, 暂时没有
+    // 启动执行客户端
+    execution_client_->start();
+    
+    // 创建策略实例
     if (strategy_factory_) {
-        strategy_factory_(execution_client_, clock_);
+        strategy_ = strategy_factory_(execution_client_, clock_);
+        if (strategy_) {
+            std::cout << "Strategy created successfully" << std::endl;
+        }
     }
     
     auto sorted_data = loadAndSortData();
+    std::cout << "Loaded " << sorted_data.size() << " data events" << std::endl;
     
     if (config_.enable_parallel && thread_pool_) {
-        // 并行处理数据批次
         processDataBatchesParallel(sorted_data, result);
     } else {
-        // 顺序处理数据
         processDataSequential(sorted_data, result);
     }
     
@@ -210,6 +233,10 @@ BacktestResult ParallelBacktestEngine::run() {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     
     result.execution_time_ms = duration.count();
+    
+    // 确保从交易所获取最终的订单统计
+    result.processed_orders = exchange_->orderCount();
+    result.filled_orders = exchange_->fillCount();
     
     if (const auto* account = execution_client_->getAccount()) {
         result.final_balances = account->balances();

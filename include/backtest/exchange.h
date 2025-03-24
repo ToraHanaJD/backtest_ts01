@@ -395,19 +395,19 @@ public:
     // 处理交易tick
     void processTradeTick(const TradeTick& trade);
     
-    // 处理K线
+    // 处理bar 
     void processBar(const Bar& bar);
     
-    // 处理订单簿增量更新
+    // 处理order book增量更新
     void processOrderBookDelta(const OrderBookDelta& delta);
     
-    // 处理订单簿增量更新集合
+    // 处理order book更新集合
     void processOrderBookDeltas(const OrderBookDeltas& deltas);
     
     // 处理金融工具状态更新
     void processInstrumentStatus(const InstrumentStatus& status);
     
-    // 处理命令
+    // process 入口
     void process(UnixNanos ts_now);
     
     // 重置

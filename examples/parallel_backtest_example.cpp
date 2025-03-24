@@ -15,7 +15,6 @@
 
 using namespace backtest;
 
-// 创建辅助函数来为示例生成ID
 inline InstrumentId createInstrumentId(uint64_t id) {
     return id;
 }
@@ -24,18 +23,18 @@ inline Venue createVenue(uint64_t id) {
     return id;
 }
 
-// 生成随机K线数据（供回测使用）
+// Generate random bar data
 std::vector<DataEvent> generateRandomBarData(InstrumentId instrument_id, int64_t start_time, int64_t end_time, 
                                             int64_t bar_interval_ns, int seed = 42) {
     std::vector<DataEvent> events;
     std::mt19937 gen(seed);
-    std::normal_distribution<> price_change(0.0, 0.02); // 均值为0，标准差为0.02的正态分布
-    std::uniform_real_distribution<> volume_dist(10.0, 100.0); // 交易量在10到100之间均匀分布
+    std::normal_distribution<> price_change(0.0, 0.02); // Normal distribution with mean 0 and std dev 0.02
+    std::uniform_real_distribution<> volume_dist(10.0, 100.0); // Volume between 10 and 100
     
-    double last_price = 100.0; // 起始价格
+    double last_price = 100.0; // Initial price
     
-    // 创建一个基本的BarType
-    BarType bar_type(createInstrumentId(1001), BarSpecification::MINUTE_1, BarAggregation::TRADE);
+    // Create a basic BarType
+    BarType bar_type(instrument_id, BarSpecification::MINUTE_1, BarAggregation::TRADE);
     
     for (int64_t time = start_time; time < end_time; time += bar_interval_ns) {
         double change = price_change(gen);
@@ -46,13 +45,11 @@ std::vector<DataEvent> generateRandomBarData(InstrumentId instrument_id, int64_t
         double low = open * (1.0 - std::abs(price_change(gen)));
         double close = open * (1.0 + price_change(gen));
         
-        // 确保high是最高价，low是最低价
         high = std::max({open, high, close});
         low = std::min({open, low, close});
         
         double volume = volume_dist(gen);
         
-        // 创建Bar对象
         Bar bar(
             bar_type,
             open,
@@ -64,15 +61,61 @@ std::vector<DataEvent> generateRandomBarData(InstrumentId instrument_id, int64_t
             time
         );
         
-        // 添加到事件列表
+        // Add Bar data event
         events.emplace_back(time, bar);
+        
+        OrderBookDelta bid_delta(
+            instrument_id,
+            OrderBookAction::ADD,  // Add
+            true,                  // Is bid
+            low * 0.99,            // Bid price slightly lower than low
+            volume * 2,            // Size is twice the volume
+            time,
+            time
+        );
+        events.emplace_back(time, bid_delta);
+        
+        // Create ask order book delta
+        OrderBookDelta ask_delta(
+            instrument_id,
+            OrderBookAction::ADD,  // Add
+            false,                 // Is ask
+            high * 1.01,           // Ask price slightly higher than high
+            volume * 2,            // Size is twice the volume
+            time,
+            time
+        );
+        events.emplace_back(time, ask_delta);
+        
+
+        OrderBookDelta market_bid_delta(
+            instrument_id,
+            OrderBookAction::ADD,
+            true,                  // Bid
+            close,                 // Current close price
+            volume,                // Volume size
+            time,
+            time
+        );
+        events.emplace_back(time, market_bid_delta);
+        
+        OrderBookDelta market_ask_delta(
+            instrument_id,
+            OrderBookAction::ADD,
+            false,                 // Ask
+            close,                 // Current close price
+            volume,                // Volume size
+            time,
+            time
+        );
+        events.emplace_back(time, market_ask_delta);
     }
     
     return events;
 }
 
-// 简单的移动平均策略
-class SimpleMovingAverageStrategy {
+// Simple moving average strategy
+class SimpleMovingAverageStrategy : public Strategy {
 public:
     SimpleMovingAverageStrategy(
         std::shared_ptr<ExecutionClient> client,
@@ -90,13 +133,12 @@ public:
         prices_ = std::vector<double>();
         position_ = 0.0;
         
-        // 打印策略初始化信息
+        // Print strategy initialization info
         std::cout << "Strategy initialized with short MA: " << short_window_ 
                   << " and long MA: " << long_window_ << std::endl;
     }
     
-    void onBar(const Bar& bar) {
-        // 我们需要从bar中提取instrumentId
+    void onBar(const Bar& bar) override {
         BarType bar_type = bar.barType();
         InstrumentId bar_instrument = bar_type.instrument_id;
         
@@ -104,19 +146,15 @@ public:
             return;
         }
         
-        // 添加收盘价到我们的价格历史记录
         prices_.push_back(bar.close());
         
-        // 如果我们有足够的数据来计算长期移动平均线
         if (prices_.size() >= (size_t)long_window_) {
             double short_ma = calculateMA(short_window_);
             double long_ma = calculateMA(long_window_);
             
-            // 当短期MA穿过长期MA时买入，反之卖出
             if (short_ma > long_ma && position_ <= 0) {
-                // 如果我们持有空仓或没有仓位，则买入
                 double price = bar.close();
-                double quantity = 1.0; // 简单起见，每次交易1个单位
+                double quantity = 1.0;
                 
                 std::shared_ptr<Order> order = std::make_shared<Order>(
                     generateUUID(),
@@ -137,9 +175,8 @@ public:
                           << " at time " << clock_->timestampNs() << std::endl;
             }
             else if (short_ma < long_ma && position_ >= 0) {
-                // 如果我们持有多仓或没有仓位，则卖出
                 double price = bar.close();
-                double quantity = 1.0; // 简单起见，每次交易1个单位
+                double quantity = 1.0;
                 
                 std::shared_ptr<Order> order = std::make_shared<Order>(
                     generateUUID(),
@@ -162,8 +199,12 @@ public:
         }
     }
     
+    void onQuote(const QuoteTick& quote) override {}
+    void onTrade(const TradeTick& trade) override {}
+    void onOrderBookDelta(const OrderBookDelta& delta) override {}
+    void onFill(const Fill& fill) override {}
+    
 private:
-    // 计算移动平均
     double calculateMA(int window) {
         int start_idx = std::max(0, (int)prices_.size() - window);
         int end_idx = prices_.size();
@@ -186,55 +227,51 @@ private:
 };
 
 int main() {
-    // 回测配置
     BacktestConfig config;
-    config.start_time_ns = 1000000000;  // 开始时间（纳秒）
-    config.end_time_ns = 2000000000;    // 结束时间（纳秒）
-    config.batch_size = 1000;           // 批处理大小
+    config.start_time_ns = 1000000000;  // Start time (nanoseconds)
+    config.end_time_ns = 2000000000;    // End time (nanoseconds)
+    config.batch_size = 1000;           // Batch size
+    config.enable_parallel = false;     // Disable parallel processing, use sequential
     
-    // 初始资金
     std::vector<Money> initial_balances;
     initial_balances.emplace_back("USDT", 10000.0);
     config.initial_balances = initial_balances;
     
-    // 创建交易所配置
     config.venue = createVenue(1);
     config.oms_type = OmsType::NETTING;
     config.account_type = AccountType::CASH;
     config.book_type = BookType::L3;
     config.default_leverage = 1.0;
     
-    // 创建并配置回测引擎
     ParallelBacktestEngine engine(config);
     
-    // 设置数据源（通过Lambda函数提供数据）
-    InstrumentId btcusdt = createInstrumentId(1001); // BTC-USDT
+    InstrumentId btcusdt = createInstrumentId(1001);
+    
+    auto exchange = engine.getExchange();
+    exchange->addInstrument(btcusdt);
+    exchange->initializeAccount();
     
     engine.addDataSource([btcusdt, &config](UnixNanos start, UnixNanos end) {
         return generateRandomBarData(
             btcusdt,
             start,
             end,
-            1000000, // 1毫秒间隔
-            42       // 随机种子
+            1000000, // 1ms interval
+            42       // Random seed
         );
     });
     
-    // 设置策略工厂
+    // Set strategy factory
     engine.setStrategyFactory([btcusdt](std::shared_ptr<ExecutionClient> client, std::shared_ptr<Clock> clock) {
-        auto strategy = std::make_shared<SimpleMovingAverageStrategy>(
+        return std::make_shared<SimpleMovingAverageStrategy>(
             client,
             clock,
             btcusdt,
-            5,  // 短期MA窗口
-            20  // 长期MA窗口
+            5,  // short ma window
+            20  // long ma window
         );
-        
-        // 在这里，系统应该注册相应的回调函数
-        // 由于这是一个简化版的例子，我们只是创建了策略实例
     });
     
-    // 运行回测
     std::cout << "Starting backtest..." << std::endl;
     auto start_time = std::chrono::high_resolution_clock::now();
     
@@ -243,7 +280,6 @@ int main() {
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     
-    // 打印回测结果
     std::cout << "Backtest completed in " << duration.count() << " ms" << std::endl;
     std::cout << "Processed " << result.processed_bars << " bars" << std::endl;
     std::cout << "Processed " << result.processed_trades << " trades" << std::endl;
@@ -251,7 +287,7 @@ int main() {
     std::cout << "Processed " << result.processed_orders << " orders" << std::endl;
     std::cout << "Filled " << result.filled_orders << " orders" << std::endl;
     
-    // 打印最终账户余额
+    // Print final account balances
     std::cout << "\nFinal account balances:" << std::endl;
     for (const auto& balance : result.final_balances) {
         std::cout << balance.currency() << ": " << std::fixed << std::setprecision(4)

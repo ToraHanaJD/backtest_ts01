@@ -457,6 +457,10 @@ void SimulatedExchange::processTradingCommand(const TradingCommand& command) {
 #if debug
             std::cout << "MatchEngine Found" << std::endl;
 #endif
+            // Add order to orders collection
+            orders_[command.order()->clientOrderId()] = command.order();
+            
+            // Submit order and process possible fills
             auto fills = matching_engine->submitOrder(command.order(), last_process_time_);
 #if debug
             std::cout << "MatchEngine Submitted" << std::endl;
@@ -473,22 +477,22 @@ void SimulatedExchange::processTradingCommand(const TradingCommand& command) {
         case TradingCommand::Type::CANCEL_ORDER: {
             auto order_it = orders_.find(command.id());
             if (order_it == orders_.end()) {
-                // 如果在本地找不到订单记录，则可能需要遍历所有匹配引擎
+                // If order not found locally, try to search in all matching engines
                 bool canceled = false;
                 
                 for (auto& entry : matching_engines_) {
                     if (entry.second->cancelOrder(command.id())) {
-                        std::cout << "订单已取消，ID: " << command.id() << std::endl;
+                        std::cout << "Order canceled, ID: " << command.id() << std::endl;
                         canceled = true;
                         break;
                     }
                 }
                 
                 if (!canceled) {
-                    std::cout << "警告: 找不到要取消的订单，ID: " << command.id() << std::endl;
+                    std::cout << "Warning: Order not found for cancellation, ID: " << command.id() << std::endl;
                 }
             } else {
-                // 如果找到了订单，直接在对应的匹配引擎中取消
+                // If order found, cancel directly in corresponding matching engine
                 auto order = order_it->second;
                 auto instrument_id = order->instrumentId();
                 
@@ -498,9 +502,9 @@ void SimulatedExchange::processTradingCommand(const TradingCommand& command) {
                 }
                 
                 if (matching_engine->cancelOrder(command.id())) {
-                    std::cout << "订单已取消，ID: " << command.id() << std::endl;
+                    std::cout << "Order canceled, ID: " << command.id() << std::endl;
                 } else {
-                    std::cout << "警告: Match Engine 中找不到要取消的订单, OrderID: " << command.id() << std::endl;
+                    std::cout << "Warning: Order not found in Match Engine, OrderID: " << command.id() << std::endl;
                 }
             }
             break;
@@ -626,42 +630,36 @@ void SimulatedExchange::updateAccount(const Fill& fill) {
         return;
     }
     
-    // 根据成交记录更新账户余额
-    auto instrument_id = fill.instrumentId();
-    auto side = fill.side();
-    auto price = fill.price();
-    auto quantity = fill.quantity();
-    
-    // 获取交易对的基础货币和计价货币
-    // 这里假设instrumentId格式为"BTC/USDT"这样的形式
-    // 实际生产环境中可能需要从其他地方获取这些信息
-    std::string instrument_str = debugInstrumentId(instrument_id);
+    // Get base currency and quote currency for trading pair
+    // Here we assume instrumentId format is like "BTC/USDT"
+    // In production environment, this information might need to be obtained from elsewhere
+    std::string instrument_str = debugInstrumentId(fill.instrumentId());
     size_t slash_pos = instrument_str.find('/');
     
     if (slash_pos == std::string::npos) {
-        // 如果没有"/"，则假设是单一资产交易
-        if (side == OrderSide::BUY) {
-            // 买入：增加资产，减少基础货币
-            account_->updateBalance(instrument_str, quantity, 0.0);
-            account_->updateBalance(base_currency_, -price * quantity, 0.0);
+        // If no "/", assume single asset trading
+        if (fill.side() == OrderSide::BUY) {
+            // Buy: increase asset, decrease base currency
+            account_->updateBalance(instrument_str, fill.quantity(), 0.0);
+            account_->updateBalance(base_currency_, -fill.price() * fill.quantity(), 0.0);
         } else {
-            // 卖出：减少资产，增加基础货币
-            account_->updateBalance(instrument_str, -quantity, 0.0);
-            account_->updateBalance(base_currency_, price * quantity, 0.0);
+            // Sell: decrease asset, increase base currency
+            account_->updateBalance(instrument_str, -fill.quantity(), 0.0);
+            account_->updateBalance(base_currency_, fill.price() * fill.quantity(), 0.0);
         }
     } else {
-        // 交易对交易
+        // Trading pair trading
         std::string base_currency = instrument_str.substr(0, slash_pos);
         std::string quote_currency = instrument_str.substr(slash_pos + 1);
         
-        if (side == OrderSide::BUY) {
-            // 买入：增加基础货币，减少计价货币
-            account_->updateBalance(base_currency, quantity, 0.0);
-            account_->updateBalance(quote_currency, -price * quantity, 0.0);
+        if (fill.side() == OrderSide::BUY) {
+            // Buy: increase base currency, decrease quote currency
+            account_->updateBalance(base_currency, fill.quantity(), 0.0);
+            account_->updateBalance(quote_currency, -fill.price() * fill.quantity(), 0.0);
         } else {
-            // 卖出：减少基础货币，增加计价货币
-            account_->updateBalance(base_currency, -quantity, 0.0);
-            account_->updateBalance(quote_currency, price * quantity, 0.0);
+            // Sell: decrease base currency, increase quote currency
+            account_->updateBalance(base_currency, -fill.quantity(), 0.0);
+            account_->updateBalance(quote_currency, fill.price() * fill.quantity(), 0.0);
         }
     }
 
@@ -889,31 +887,28 @@ std::vector<Fill> OrderMatchingEngine::submitOrder(std::shared_ptr<Order> order,
     
     order->setStatus(OrderStatus::ACCEPTED);
     
-    // 市价单直接成交
+    // 先添加到开放订单列表，包括市价单
+    addToOpenOrders(order);
+    
+    // 市价单和限价单都尝试立即成交
     if (order->type() == OrderType::MARKET) {
         fills = matchOrder(order, timestamp);
-    } else {
-        // 先添加到开放订单列表
-        addToOpenOrders(order);
-        
-        // 限价单，尝试立即成交
-        if (order->type() == OrderType::LIMIT) {
-            Price best_price = 0;
-            if (order->side() == OrderSide::BUY) {
-                best_price = order_book_->bestAskPrice();
-                if (best_price > 0 && best_price <= order->price()) {
-                    fills = matchOrder(order, timestamp);
-                }
-            } else {
-                best_price = order_book_->bestBidPrice();
-                if (best_price > 0 && best_price >= order->price()) {
-                    fills = matchOrder(order, timestamp);
-                }
+    } else if (order->type() == OrderType::LIMIT) {
+        Price best_price = 0;
+        if (order->side() == OrderSide::BUY) {
+            best_price = order_book_->bestAskPrice();
+            if (best_price > 0 && best_price <= order->price()) {
+                fills = matchOrder(order, timestamp);
+            }
+        } else {
+            best_price = order_book_->bestBidPrice();
+            if (best_price > 0 && best_price >= order->price()) {
+                fills = matchOrder(order, timestamp);
             }
         }
     }
     
-    // filled
+    // 如果订单已完全成交，从开放订单列表中移除
     if (order->isFilled()) {
         removeFromOpenOrders(order->clientOrderId());
     }
@@ -992,27 +987,49 @@ std::vector<Fill> OrderMatchingEngine::matchOrder(std::shared_ptr<Order> order, 
     if (order->side() == OrderSide::BUY) {
         // 对于买单，尝试以最优卖价成交
         match_price = order_book_->bestAskPrice();
-        if (match_price <= 0) {
-            return fills;
+        if (match_price <= 0 || match_price == 100000.0) { // 检查是否为默认的大数值
+            // 如果没有卖单，可以视为找不到对手方
+            if (order->type() == OrderType::MARKET) {
+                // 对于市价单，我们强制以订单中的价格成交
+                match_price = order->price();
+                match_quantity = order->remainingQuantity();
+            } else {
+                return fills; // 限价单无法成交
+            }
+        } else {
+            if (order->type() == OrderType::LIMIT && match_price > order->price()) {
+                return fills; // 限价单无法以高于限价的价格成交
+            }
+            
+            match_quantity = std::min(order->remainingQuantity(), order_book_->askSize(match_price));
+            // 确保市价单可以完全成交
+            if (order->type() == OrderType::MARKET && match_quantity < order->remainingQuantity()) {
+                match_quantity = order->remainingQuantity();
+            }
         }
-        
-        if (order->type() == OrderType::LIMIT && match_price > order->price()) {
-            return fills; // 限价单无法以高于限价的价格成交
-        }
-        
-        match_quantity = std::min(order->remainingQuantity(), order_book_->askSize(match_price));
     } else {
         // 对于卖单，尝试以最优买价成交
         match_price = order_book_->bestBidPrice();
         if (match_price <= 0) {
-            return fills;
+            // 如果没有买单，可以视为找不到对手方
+            if (order->type() == OrderType::MARKET) {
+                // 对于市价单，我们强制以订单中的价格成交
+                match_price = order->price();
+                match_quantity = order->remainingQuantity();
+            } else {
+                return fills; // 限价单无法成交
+            }
+        } else {
+            if (order->type() == OrderType::LIMIT && match_price < order->price()) {
+                return fills; // 限价单无法以低于限价的价格成交
+            }
+            
+            match_quantity = std::min(order->remainingQuantity(), order_book_->bidSize(match_price));
+            // 确保市价单可以完全成交
+            if (order->type() == OrderType::MARKET && match_quantity < order->remainingQuantity()) {
+                match_quantity = order->remainingQuantity();
+            }
         }
-        
-        if (order->type() == OrderType::LIMIT && match_price < order->price()) {
-            return fills; // 限价单无法以低于限价的价格成交
-        }
-        
-        match_quantity = std::min(order->remainingQuantity(), order_book_->bidSize(match_price));
     }
     
     if (match_quantity > 0) {
@@ -1033,25 +1050,49 @@ std::vector<Fill> OrderMatchingEngine::matchOrder(std::shared_ptr<Order> order, 
         // 更新订单簿
         if (order_book_) {
             OrderBookAction action = OrderBookAction::UPDATE;
-            if (match_quantity >= (order->side() == OrderSide::BUY ? 
-                                  order_book_->askSize(match_price) : 
-                                  order_book_->bidSize(match_price))) {
-                action = OrderBookAction::DELETE;
+            Quantity remaining_size = 0;
+            
+            if (order->side() == OrderSide::BUY) {
+                remaining_size = order_book_->askSize(match_price);
+                if (match_quantity >= remaining_size) {
+                    action = OrderBookAction::DELETE;
+                    remaining_size = 0;
+                } else {
+                    remaining_size -= match_quantity;
+                }
+                
+                OrderBookDelta delta(
+                    instrument_id_,
+                    action,
+                    false, // 更新卖盘
+                    match_price,
+                    remaining_size,
+                    timestamp,
+                    timestamp
+                );
+                
+                order_book_->applyDelta(delta);
+            } else {
+                remaining_size = order_book_->bidSize(match_price);
+                if (match_quantity >= remaining_size) {
+                    action = OrderBookAction::DELETE;
+                    remaining_size = 0;
+                } else {
+                    remaining_size -= match_quantity;
+                }
+                
+                OrderBookDelta delta(
+                    instrument_id_,
+                    action,
+                    true, // 更新买盘
+                    match_price,
+                    remaining_size,
+                    timestamp,
+                    timestamp
+                );
+                
+                order_book_->applyDelta(delta);
             }
-            
-            OrderBookDelta delta(
-                instrument_id_,
-                action,
-                order->side() == OrderSide::SELL, // 买单匹配卖单，所以更新相反方向
-                match_price,
-                order->side() == OrderSide::BUY ? 
-                    order_book_->askSize(match_price) - match_quantity : 
-                    order_book_->bidSize(match_price) - match_quantity,
-                timestamp,
-                timestamp
-            );
-            
-            order_book_->applyDelta(delta);
         }
         
         // 如果订单未完全成交，尝试继续匹配
