@@ -160,7 +160,7 @@ private:
     bool routing_;
     bool frozen_account_;
     
-    // 缓存数据
+    // 缓存数据, 可以放入redis
     std::unordered_map<UUID, Order> orders_;
     std::unordered_map<InstrumentId, std::vector<UUID>> orders_by_instrument_;
     

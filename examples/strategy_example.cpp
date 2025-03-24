@@ -69,7 +69,7 @@ public:
     
     // onMarketData函数
     void onMarketData(const MarketData& data) {
-        // 仅处理与我们关注的交易品种相关的数据
+        // 仅处理交易品种相关的数据
         if (data.instrument_id != instrument_id_) {
             return;
         }

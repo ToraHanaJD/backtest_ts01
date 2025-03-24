@@ -744,7 +744,7 @@ void OrderMatchingEngine::processQuoteTick(const QuoteTick& quote) {
 }
 
 void OrderMatchingEngine::processTradeTick(const TradeTick& trade) {
-    // 对于每个交易行情，我们检查是否有触发的止损单或限价单
+    // 对于每个交易行情，检查是否有触发的止损单或限价单
     Price trade_price = trade.price();
     
     for (auto it = open_orders_.begin(); it != open_orders_.end();) {
@@ -990,7 +990,7 @@ std::vector<Fill> OrderMatchingEngine::matchOrder(std::shared_ptr<Order> order, 
         if (match_price <= 0 || match_price == 100000.0) { // 检查是否为默认的大数值
             // 如果没有卖单，可以视为找不到对手方
             if (order->type() == OrderType::MARKET) {
-                // 对于市价单，我们强制以订单中的价格成交
+                // 对于市价单，强制以订单中的价格成交
                 match_price = order->price();
                 match_quantity = order->remainingQuantity();
             } else {
@@ -1013,7 +1013,7 @@ std::vector<Fill> OrderMatchingEngine::matchOrder(std::shared_ptr<Order> order, 
         if (match_price <= 0) {
             // 如果没有买单，可以视为找不到对手方
             if (order->type() == OrderType::MARKET) {
-                // 对于市价单，我们强制以订单中的价格成交
+                // 对于市价单，强制以订单中的价格成交
                 match_price = order->price();
                 match_quantity = order->remainingQuantity();
             } else {
