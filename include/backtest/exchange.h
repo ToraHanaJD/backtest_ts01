@@ -60,6 +60,9 @@ struct Money {
     Money(Currency curr, double amt) : currency(std::move(curr)), amount(amt) {}
     Money() : currency(""), amount(0.0) {}
 
+    // 获取金额值
+    double as_f64() const { return amount; }
+
     // 加法
     Money operator+(const Money& other) const {
         if (currency != other.currency) {
@@ -222,6 +225,8 @@ public:
     Price price() const { return price_; }
     Quantity quantity() const { return quantity_; }
     UnixNanos timestamp() const { return timestamp_; }
+    Money commission() const { return commission_; }
+    void setCommission(const Money& commission) { commission_ = commission; }
     
     std::string toString() const;
 
@@ -233,6 +238,7 @@ private:
     Price price_;
     Quantity quantity_;
     UnixNanos timestamp_;
+    Money commission_;  // 手续费
 };
 
 /**
@@ -247,8 +253,19 @@ public:
     double locked() const { return locked_; }
     double total() const { return free_ + locked_; }
     
-    void addFree(double amount) { free_ += amount; }
-    void addLocked(double amount) { locked_ += amount; }
+    void addFree(double amount) {
+        if (free_ + amount < 0) {
+            throw std::runtime_error("Insufficient free balance");
+        }
+        free_ += amount;
+    }
+
+    void addLocked(double amount) {
+        if (locked_ + amount < 0) {
+            throw std::runtime_error("Insufficient locked balance");
+        }
+        locked_ += amount;
+    }
     void lockAmount(double amount);
     void unlockAmount(double amount);
     void transferLockedToFree(double amount);

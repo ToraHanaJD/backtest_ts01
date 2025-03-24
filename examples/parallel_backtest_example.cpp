@@ -169,7 +169,6 @@ public:
                 );
                 
                 client_->submitOrder(order);
-                position_ += quantity;
                 
                 std::cout << "BUY " << quantity << " at price " << price 
                           << " at time " << clock_->timestampNs() << std::endl;
@@ -191,7 +190,6 @@ public:
                 );
                 
                 client_->submitOrder(order);
-                position_ -= quantity;
                 
                 std::cout << "SELL " << quantity << " at price " << price 
                           << " at time " << clock_->timestampNs() << std::endl;
@@ -202,7 +200,24 @@ public:
     void onQuote(const QuoteTick& quote) override {}
     void onTrade(const TradeTick& trade) override {}
     void onOrderBookDelta(const OrderBookDelta& delta) override {}
-    void onFill(const Fill& fill) override {}
+    
+    void onFill(const Fill& fill) override {
+        if (fill.instrumentId() != instrument_) {
+            return;
+        }
+        
+        // 更新持仓
+        if (fill.side() == OrderSide::BUY) {
+            position_ += fill.quantity();
+        } else {
+            position_ -= fill.quantity();
+        }
+        
+        std::cout << "Fill received: " << (fill.side() == OrderSide::BUY ? "BUY" : "SELL")
+                  << " " << fill.quantity() << " at price " << fill.price()
+                  << ", commission: " << fill.commission().as_f64()
+                  << ", current position: " << position_ << std::endl;
+    }
     
 private:
     double calculateMA(int window) {
@@ -234,7 +249,8 @@ int main() {
     config.enable_parallel = false;     // Disable parallel processing, use sequential
     
     std::vector<Money> initial_balances;
-    initial_balances.emplace_back("USDT", 10000.0);
+    initial_balances.emplace_back("USDT", 10000.0);  // 初始USDT余额
+    initial_balances.emplace_back("1001", 100.0);    // 初始交易品种余额
     config.initial_balances = initial_balances;
     
     config.venue = createVenue(1);

@@ -76,7 +76,8 @@ Fill::Fill(
     , side_(side)
     , price_(price)
     , quantity_(quantity)
-    , timestamp_(timestamp) {
+    , timestamp_(timestamp)
+    , commission_(Money("USDT", 0.0)) {  // 默认手续费为0
 }
 
 std::string Fill::toString() const {
@@ -87,7 +88,8 @@ std::string Fill::toString() const {
            (side_ == OrderSide::BUY ? "BUY" : "SELL") + "," +
            std::to_string(price_) + "," +
            std::to_string(quantity_) + "," +
-           std::to_string(timestamp_) + ")";
+           std::to_string(timestamp_) + "," +
+           commission_.toString() + ")";
 }
 
 // AccountBalance 类实现
@@ -134,6 +136,14 @@ Account::Account(UUID account_id, Venue venue, AccountType type, std::vector<Acc
     , venue_(std::move(venue))
     , type_(type)
     , balances_(std::move(balances)) {
+    
+    // 打印初始余额信息
+    std::cout << "Initializing account with balances:" << std::endl;
+    for (const auto& balance : balances_) {
+        std::cout << "Currency: " << balance.currency() 
+                  << ", Free: " << balance.free()
+                  << ", Locked: " << balance.locked() << std::endl;
+    }
 }
 
 AccountBalance* Account::getBalance(const Currency& currency) {
@@ -284,16 +294,43 @@ void SimulatedExchange::addInstrument(const InstrumentId& instrument_id) {
 
 void SimulatedExchange::initializeAccount() {
     if (!account_) {
+        std::cout << "Initializing account with balances:" << std::endl;
         std::vector<AccountBalance> balances;
-        for (const auto& money : starting_balances_) {
-            balances.emplace_back(money.currency, money.amount, 0.0);
+        
+        // 检查 starting_balances_ 是否为空
+        if (starting_balances_.empty()) {
+            std::cout << "Warning: No starting balances provided!" << std::endl;
+            // 添加默认的 USDT 余额
+            balances.emplace_back("USDT", 10000.0, 0.0);
+        } else {
+            for (const auto& money : starting_balances_) {
+                std::cout << "Initializing balance - Currency: " << money.currency 
+                          << ", Amount: " << money.amount << std::endl;
+                balances.emplace_back(money.currency, money.amount, 0.0);
+            }
         }
+        
+        // 创建账户
         account_ = std::make_unique<Account>(
             generateUUID(),
             venue_,
             account_type_,
             std::move(balances)
         );
+        
+        // 验证账户初始化
+        std::cout << "Account initialized successfully:" << std::endl;
+        std::cout << "Account ID: " << account_->accountId() << std::endl;
+        std::cout << "Venue: " << account_->venue() << std::endl;
+        std::cout << "Account Type: " << static_cast<int>(account_->type()) << std::endl;
+        std::cout << "Balances:" << std::endl;
+        for (const auto& balance : account_->balances()) {
+            std::cout << "  Currency: " << balance.currency() 
+                      << ", Free: " << balance.free()
+                      << ", Locked: " << balance.locked() << std::endl;
+        }
+    } else {
+        std::cout << "Account already initialized" << std::endl;
     }
 }
 
@@ -630,36 +667,114 @@ void SimulatedExchange::updateAccount(const Fill& fill) {
         return;
     }
     
-    // Get base currency and quote currency for trading pair
-    // Here we assume instrumentId format is like "BTC/USDT"
-    // In production environment, this information might need to be obtained from elsewhere
+    std::cout << "Updating account for fill: " << fill.toString() << std::endl;
+    
+    // 计算手续费
+    double commission = fill.commission().as_f64();
+    std::cout << "Commission: " << commission << std::endl;
+    
+    // 获取基础货币和报价货币
     std::string instrument_str = debugInstrumentId(fill.instrumentId());
+    std::cout << "Instrument: " << instrument_str << std::endl;
+    
     size_t slash_pos = instrument_str.find('/');
     
     if (slash_pos == std::string::npos) {
-        // If no "/", assume single asset trading
+        // 单资产交易
+        std::cout << "Processing single asset trade" << std::endl;
+        
+        // 使用交易品种ID作为资产的货币代码
+        std::string asset_currency = std::to_string(fill.instrumentId());
+        std::cout << "Asset currency: " << asset_currency << std::endl;
+        
         if (fill.side() == OrderSide::BUY) {
-            // Buy: increase asset, decrease base currency
-            account_->updateBalance(instrument_str, fill.quantity(), 0.0);
-            account_->updateBalance(base_currency_, -fill.price() * fill.quantity(), 0.0);
+            // 买入：增加资产，减少基础货币
+            double asset_quantity = fill.quantity();
+            double currency_amount = fill.price() * fill.quantity() + commission;
+            
+            std::cout << "Buy order: " << std::endl;
+            std::cout << "  Asset quantity: " << asset_quantity << std::endl;
+            std::cout << "  Currency amount: " << currency_amount << std::endl;
+            
+            // 先检查余额是否足够
+            auto* currency_balance = account_->getBalance(base_currency_);
+            if (!currency_balance || currency_balance->free() < currency_amount) {
+                std::stringstream ss;
+                ss << "Insufficient balance for buy order: required=" << currency_amount 
+                   << ", available=" << (currency_balance ? currency_balance->free() : 0);
+                throw std::runtime_error(ss.str());
+            }
+            
+            // 更新余额
+            account_->updateBalance(base_currency_, -currency_amount, 0.0);
+            account_->updateBalance(asset_currency, asset_quantity, 0.0);
+            
+            std::cout << "Updated balances after buy:" << std::endl;
+            std::cout << "  " << base_currency_ << ": " << currency_balance->free() << std::endl;
+            std::cout << "  " << asset_currency << ": " << account_->getBalance(asset_currency)->free() << std::endl;
         } else {
-            // Sell: decrease asset, increase base currency
-            account_->updateBalance(instrument_str, -fill.quantity(), 0.0);
-            account_->updateBalance(base_currency_, fill.price() * fill.quantity(), 0.0);
+            // 卖出：减少资产，增加基础货币
+            double asset_quantity = fill.quantity();
+            double currency_amount = fill.price() * fill.quantity() - commission;
+            
+            std::cout << "Sell order: " << std::endl;
+            std::cout << "  Asset quantity: " << asset_quantity << std::endl;
+            std::cout << "  Currency amount: " << currency_amount << std::endl;
+            
+            // 先检查资产余额是否足够
+            auto* asset_balance = account_->getBalance(asset_currency);
+            if (!asset_balance || asset_balance->free() < asset_quantity) {
+                std::stringstream ss;
+                ss << "Insufficient balance for sell order: required=" << asset_quantity 
+                   << ", available=" << (asset_balance ? asset_balance->free() : 0);
+                throw std::runtime_error(ss.str());
+            }
+            
+            // 更新余额
+            account_->updateBalance(asset_currency, -asset_quantity, 0.0);
+            account_->updateBalance(base_currency_, currency_amount, 0.0);
+            
+            std::cout << "Updated balances after sell:" << std::endl;
+            std::cout << "  " << base_currency_ << ": " << account_->getBalance(base_currency_)->free() << std::endl;
+            std::cout << "  " << asset_currency << ": " << asset_balance->free() << std::endl;
         }
     } else {
-        // Trading pair trading
+        // 交易对交易
         std::string base_currency = instrument_str.substr(0, slash_pos);
         std::string quote_currency = instrument_str.substr(slash_pos + 1);
         
         if (fill.side() == OrderSide::BUY) {
-            // Buy: increase base currency, decrease quote currency
-            account_->updateBalance(base_currency, fill.quantity(), 0.0);
-            account_->updateBalance(quote_currency, -fill.price() * fill.quantity(), 0.0);
+            // 买入：增加基础货币，减少报价货币
+            double base_amount = fill.quantity();
+            double quote_amount = fill.price() * fill.quantity() + commission;
+            
+            // 先检查报价货币余额是否足够
+            auto* quote_balance = account_->getBalance(quote_currency);
+            if (!quote_balance || quote_balance->free() < quote_amount) {
+                std::stringstream ss;
+                ss << "Insufficient balance for buy order: required=" << quote_amount 
+                   << ", available=" << (quote_balance ? quote_balance->free() : 0);
+                throw std::runtime_error(ss.str());
+            }
+            
+            account_->updateBalance(base_currency, base_amount, 0.0);
+            account_->updateBalance(quote_currency, -quote_amount, 0.0);
         } else {
-            // Sell: decrease base currency, increase quote currency
-            account_->updateBalance(base_currency, -fill.quantity(), 0.0);
-            account_->updateBalance(quote_currency, fill.price() * fill.quantity(), 0.0);
+            // 卖出：减少基础货币，增加报价货币
+            double base_amount = fill.quantity();
+            double quote_amount = fill.price() * fill.quantity() - commission;
+            
+            // 先检查基础货币余额是否足够
+            auto* base_balance = account_->getBalance(base_currency);
+            if (!base_balance || base_balance->free() < base_amount) {
+                std::stringstream ss;
+                ss << "Insufficient balance for sell order: required=" << base_amount 
+                   << ", available=" << (base_balance ? base_balance->free() : 0);
+                throw std::runtime_error(ss.str());
+            }
+            
+            account_->updateBalance(base_currency, -base_amount, 0.0);
+            account_->updateBalance(quote_currency, quote_amount, 0.0);
         }
     }
 
@@ -1113,7 +1228,12 @@ Fill OrderMatchingEngine::createFill(const UUID& order_id, Price price, Quantity
     
     auto order = it->second;
     
-    return Fill(
+    // 计算手续费（这里使用0.1%作为示例）
+    double commission_rate = 0.001;
+    double commission_amount = static_cast<double>(price) * static_cast<double>(quantity) * commission_rate;
+    Money commission("USDT", commission_amount);
+    
+    Fill fill(
         generateUUID(),
         order_id,
         instrument_id_,
@@ -1122,6 +1242,11 @@ Fill OrderMatchingEngine::createFill(const UUID& order_id, Price price, Quantity
         quantity,
         timestamp
     );
+    
+    // 设置手续费
+    fill.setCommission(commission);
+    
+    return fill;
 }
 
 void OrderMatchingEngine::addToOpenOrders(std::shared_ptr<Order> order) {
