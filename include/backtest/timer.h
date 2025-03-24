@@ -27,24 +27,20 @@ public:
      */
     TimeEvent(std::string name, UnixNanos trigger_time_ns);
     
-    // 添加默认构造函数
     TimeEvent() : name_(""), trigger_time_ns_(0), triggered_(false), valid_(true) {}
     
-    // 添加复制构造函数
     TimeEvent(const TimeEvent& other) 
         : name_(other.name_), 
           trigger_time_ns_(other.trigger_time_ns_),
           triggered_(other.triggered_),
           valid_(other.valid_) {}
     
-    // 添加移动构造函数
     TimeEvent(TimeEvent&& other) 
         : name_(std::move(other.name_)), 
           trigger_time_ns_(other.trigger_time_ns_),
           triggered_(other.triggered_),
           valid_(other.valid_) {}
     
-    // 添加复制赋值运算符
     TimeEvent& operator=(const TimeEvent& other) {
         if (this != &other) {
             name_ = other.name_;
@@ -55,7 +51,6 @@ public:
         return *this;
     }
     
-    // 添加移动赋值运算符
     TimeEvent& operator=(TimeEvent&& other) {
         if (this != &other) {
             name_ = std::move(other.name_);
@@ -137,12 +132,10 @@ public:
         CANCELLED
     };
     
-    /// 获取状态
     Status getStatus() const { 
         return status_; 
     }
     
-    /// 设置状态
     void setStatus(Status status) { 
         status_ = status; 
     }
